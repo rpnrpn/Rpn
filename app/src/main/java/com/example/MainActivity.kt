@@ -41,7 +41,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -55,6 +59,7 @@ import com.example.data.DeviceType
 import com.example.data.NetworkDevice
 import com.example.data.ScanHistory
 import com.example.ui.SignalViewModel
+import com.example.ui.AppScreen
 import com.example.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -66,11 +71,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            MyApplicationTheme {
+            val vm: SignalViewModel = viewModel()
+            val theme by vm.appThemeSetting.collectAsStateWithLifecycle()
+            MyApplicationTheme(appTheme = theme) {
                 Scaffold(
                     modifier = Modifier.fillMaxSize()
                 ) { innerPadding ->
                     AirPulseApp(
+                        viewModel = vm,
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(innerPadding)
@@ -99,6 +107,7 @@ fun AirPulseApp(
     val isScanning by viewModel.isScanning.collectAsStateWithLifecycle()
     val selectedDevice by viewModel.selectedDevice.collectAsStateWithLifecycle()
     val historyLogs by viewModel.scanHistory.collectAsStateWithLifecycle()
+    val currentScreen by viewModel.currentAppScreen.collectAsStateWithLifecycle()
 
     // Permission check state
     var hasLocationPermission by remember {
@@ -142,11 +151,235 @@ fun AirPulseApp(
             .background(SlateDarkBackground)
     ) {
         // --- 1. HEADER BRAND ROW ---
-        HeaderRow(
-            isSimulation = isSimulation,
-            onToggleSimulation = { viewModel.toggleSimulationMode() }
-        )
+        HeaderRow()
 
+        // --- 2. ACTIVE SCREEN CONTENT WITH ADAPTIVE CONTAINER ---
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            contentAlignment = Alignment.TopCenter
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .widthIn(max = 640.dp)
+            ) {
+                when (currentScreen) {
+                    AppScreen.SCANNER -> {
+                        ScannerDashboardScreen(
+                            viewModel = viewModel,
+                            wifiList = wifiList,
+                            btList = btList,
+                            filteredWifi = filteredWifi,
+                            filteredBt = filteredBt,
+                            isScanning = isScanning,
+                            hasLocationPermission = hasLocationPermission,
+                            permissionLauncher = permissionLauncher,
+                            isSimulation = isSimulation,
+                            query = query,
+                            minRssi = minRssi,
+                            favoritesOnly = favoritesOnly,
+                            selectedTab = selectedTab,
+                            historyLogs = historyLogs
+                        )
+                    }
+                    AppScreen.SURROUND_WIFI -> {
+                        SurroundWifiScreen(
+                            viewModel = viewModel,
+                            wifiList = wifiList
+                        )
+                    }
+                    AppScreen.WIFI_PORTAL -> {
+                        WifiPortalScreen(
+                            viewModel = viewModel,
+                            wifiList = wifiList
+                        )
+                    }
+                    AppScreen.BT_INTERNET -> {
+                        BluetoothInternetScreen(
+                            viewModel = viewModel,
+                            btList = btList
+                        )
+                    }
+                    AppScreen.SETTINGS -> {
+                        SettingsScreen(
+                            viewModel = viewModel
+                        )
+                    }
+                }
+            }
+        }
+
+        // --- 3. BOTTOM NAVIGATION BAR ---
+        NavigationBar(
+            containerColor = SleekBottomNavBackground,
+            tonalElevation = 8.dp,
+            modifier = Modifier.fillMaxWidth().testTag("bottom_nav")
+        ) {
+            NavigationBarItem(
+                selected = currentScreen == AppScreen.SCANNER,
+                onClick = { viewModel.selectScreen(AppScreen.SCANNER) },
+                icon = {
+                    Icon(
+                        imageVector = Icons.Default.Radar,
+                        contentDescription = "Radar Scan",
+                        tint = if (currentScreen == AppScreen.SCANNER) Color(0xFF00FF9D) else SleekTextMedium,
+                        modifier = Modifier.size(24.dp)
+                    )
+                },
+                label = {
+                    Text(
+                        "Radar Scan",
+                        fontSize = 11.sp,
+                        fontWeight = if (currentScreen == AppScreen.SCANNER) FontWeight.Bold else FontWeight.Normal,
+                        color = if (currentScreen == AppScreen.SCANNER) SleekTextDark else SleekTextMedium
+                    )
+                },
+                colors = NavigationBarItemDefaults.colors(
+                    indicatorColor = SleekSecondaryContainer
+                ),
+                modifier = Modifier.testTag("nav_scanner")
+            )
+            NavigationBarItem(
+                selected = currentScreen == AppScreen.SURROUND_WIFI,
+                onClick = { viewModel.selectScreen(AppScreen.SURROUND_WIFI) },
+                icon = {
+                    Icon(
+                        imageVector = Icons.Default.Router,
+                        contentDescription = "Surround Wi-Fi",
+                        tint = if (currentScreen == AppScreen.SURROUND_WIFI) Color(0xFFFF007F) else SleekTextMedium,
+                        modifier = Modifier.size(24.dp)
+                    )
+                },
+                label = {
+                    Text(
+                        "Surround Wi-Fi",
+                        fontSize = 11.sp,
+                        fontWeight = if (currentScreen == AppScreen.SURROUND_WIFI) FontWeight.Bold else FontWeight.Normal,
+                        color = if (currentScreen == AppScreen.SURROUND_WIFI) SleekTextDark else SleekTextMedium
+                    )
+                },
+                colors = NavigationBarItemDefaults.colors(
+                    indicatorColor = SleekSecondaryContainer
+                ),
+                modifier = Modifier.testTag("nav_surround_wifi")
+            )
+            NavigationBarItem(
+                selected = currentScreen == AppScreen.WIFI_PORTAL,
+                onClick = { viewModel.selectScreen(AppScreen.WIFI_PORTAL) },
+                icon = {
+                    Icon(
+                        imageVector = Icons.Default.WifiTethering,
+                        contentDescription = "Wi-Fi Portal",
+                        tint = if (currentScreen == AppScreen.WIFI_PORTAL) Color(0xFF00F0FF) else SleekTextMedium,
+                        modifier = Modifier.size(24.dp)
+                    )
+                },
+                label = {
+                    Text(
+                        "Wi-Fi Portal",
+                        fontSize = 11.sp,
+                        fontWeight = if (currentScreen == AppScreen.WIFI_PORTAL) FontWeight.Bold else FontWeight.Normal,
+                        color = if (currentScreen == AppScreen.WIFI_PORTAL) SleekTextDark else SleekTextMedium
+                    )
+                },
+                colors = NavigationBarItemDefaults.colors(
+                    indicatorColor = SleekSecondaryContainer
+                ),
+                modifier = Modifier.testTag("nav_wifi")
+            )
+            NavigationBarItem(
+                selected = currentScreen == AppScreen.BT_INTERNET,
+                onClick = { viewModel.selectScreen(AppScreen.BT_INTERNET) },
+                icon = {
+                    Icon(
+                        imageVector = Icons.Default.Bluetooth,
+                        contentDescription = "BT Internet",
+                        tint = if (currentScreen == AppScreen.BT_INTERNET) Color(0xFFFFD600) else SleekTextMedium,
+                        modifier = Modifier.size(24.dp)
+                    )
+                },
+                label = {
+                    Text(
+                        "BT Internet",
+                        fontSize = 11.sp,
+                        fontWeight = if (currentScreen == AppScreen.BT_INTERNET) FontWeight.Bold else FontWeight.Normal,
+                        color = if (currentScreen == AppScreen.BT_INTERNET) SleekTextDark else SleekTextMedium
+                    )
+                },
+                colors = NavigationBarItemDefaults.colors(
+                    indicatorColor = SleekSecondaryContainer
+                ),
+                modifier = Modifier.testTag("nav_bt")
+            )
+            NavigationBarItem(
+                selected = currentScreen == AppScreen.SETTINGS,
+                onClick = { viewModel.selectScreen(AppScreen.SETTINGS) },
+                icon = {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "Settings",
+                        tint = if (currentScreen == AppScreen.SETTINGS) Color(0xFFFF3366) else SleekTextMedium,
+                        modifier = Modifier.size(24.dp)
+                    )
+                },
+                label = {
+                    Text(
+                        "Settings",
+                        fontSize = 11.sp,
+                        fontWeight = if (currentScreen == AppScreen.SETTINGS) FontWeight.Bold else FontWeight.Normal,
+                        color = if (currentScreen == AppScreen.SETTINGS) SleekTextDark else SleekTextMedium
+                    )
+                },
+                colors = NavigationBarItemDefaults.colors(
+                    indicatorColor = SleekSecondaryContainer
+                ),
+                modifier = Modifier.testTag("nav_settings")
+            )
+        }
+
+        // --- DEVICE DETAIL BOTTOM SHEET / DIALOG ---
+        if (selectedDevice != null) {
+            DeviceDetailDialog(
+                device = selectedDevice!!,
+                isTesting = viewModel.isTestingConnection.collectAsStateWithLifecycle().value,
+                testProgress = viewModel.connectionProgress.collectAsStateWithLifecycle().value,
+                testStatus = viewModel.connectionStatusText.collectAsStateWithLifecycle().value,
+                ping = viewModel.pingMs.collectAsStateWithLifecycle().value,
+                deviceHistory = viewModel.getDeviceHistoryFlow(selectedDevice!!.macAddress)
+                    .collectAsStateWithLifecycle(initialValue = emptyList<ScanHistory>()).value,
+                onDismiss = { viewModel.selectDevice(null) },
+                onSaveAlias = { name, notes, fav, threshold ->
+                    viewModel.saveDeviceAlias(selectedDevice!!.macAddress, name, notes, fav, threshold)
+                },
+                onDeleteAlias = {
+                    viewModel.deleteDeviceAlias(selectedDevice!!.macAddress)
+                },
+                onStartTest = { viewModel.startConnectionTest(selectedDevice!!) }
+            )
+        }
+    }
+}
+
+@Composable
+fun ScannerDashboardScreen(
+    viewModel: SignalViewModel,
+    wifiList: List<NetworkDevice>,
+    btList: List<NetworkDevice>,
+    filteredWifi: List<NetworkDevice>,
+    filteredBt: List<NetworkDevice>,
+    isScanning: Boolean,
+    hasLocationPermission: Boolean,
+    permissionLauncher: androidx.activity.compose.ManagedActivityResultLauncher<Array<String>, Map<String, Boolean>>,
+    isSimulation: Boolean,
+    query: String,
+    minRssi: Int,
+    favoritesOnly: Boolean,
+    selectedTab: DeviceType,
+    historyLogs: List<ScanHistory>
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
         // --- 2. LIVE RADAR SCREEN ---
         RadarBanner(
             isScanning = isScanning,
@@ -157,8 +390,6 @@ fun AirPulseApp(
 
         // --- 3. FILTERING CONTROLS CARD ---
         FiltersCard(
-            query = query,
-            onQueryChanged = { viewModel.updateSearchQuery(it) },
             minRssi = minRssi,
             onMinRssiChanged = { viewModel.updateMinRssi(it) },
             favoritesOnly = favoritesOnly,
@@ -263,11 +494,11 @@ fun AirPulseApp(
                     Box(
                         modifier = Modifier
                             .size(8.dp)
-                            .background(if (isSimulation) Purple80 else SignalExcellent, CircleShape)
+                            .background(Color(0xFF00FF9D), CircleShape) // Sleek neon green indicator
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = if (isSimulation) "Simulation Mode Active" else "Hardware Scans Active",
+                        text = "Wireless Telemetry Active",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium,
                         color = SleekTextMedium
@@ -299,88 +530,47 @@ fun AirPulseApp(
             onClearLogs = { viewModel.clearHistoryLogs() }
         )
     }
-
-    // --- DEVICE DETAIL BOTTOM SHEET / DIALOG ---
-    if (selectedDevice != null) {
-        DeviceDetailDialog(
-            device = selectedDevice!!,
-            isTesting = viewModel.isTestingConnection.collectAsStateWithLifecycle().value,
-            testProgress = viewModel.connectionProgress.collectAsStateWithLifecycle().value,
-            testStatus = viewModel.connectionStatusText.collectAsStateWithLifecycle().value,
-            ping = viewModel.pingMs.collectAsStateWithLifecycle().value,
-            deviceHistory = viewModel.getDeviceHistoryFlow(selectedDevice!!.macAddress)
-                .collectAsStateWithLifecycle(initialValue = emptyList<ScanHistory>()).value,
-            onDismiss = { viewModel.selectDevice(null) },
-            onSaveAlias = { name, notes, fav, threshold ->
-                viewModel.saveDeviceAlias(selectedDevice!!.macAddress, name, notes, fav, threshold)
-            },
-            onDeleteAlias = {
-                viewModel.deleteDeviceAlias(selectedDevice!!.macAddress)
-            },
-            onStartTest = { viewModel.startConnectionTest(selectedDevice!!) }
-        )
-    }
 }
 
 @Composable
-fun HeaderRow(
-    isSimulation: Boolean,
-    onToggleSimulation: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+fun HeaderRow() {
+    Box(
+        modifier = Modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center
     ) {
-        Column {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.LocationOn,
-                    contentDescription = "Radar Logo",
-                    tint = Purple80,
-                    modifier = Modifier.size(26.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 640.dp)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.LocationOn,
+                        contentDescription = "Radar Logo",
+                        tint = Color(0xFF00FF9D), // Sleek electric green
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "AirPulse",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Black,
+                        color = SleekTextDark,
+                        fontFamily = FontFamily.SansSerif,
+                        letterSpacing = 0.5.sp
+                    )
+                }
                 Text(
-                    text = "AirPulse",
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Black,
-                    color = SleekTextDark,
-                    fontFamily = FontFamily.SansSerif
+                    text = "Wireless Telemetry & Monitor",
+                    fontSize = 10.sp,
+                    color = SleekTextMedium,
+                    letterSpacing = 0.5.sp
                 )
             }
-            Text(
-                text = "Wireless Telemetry & Monitor",
-                fontSize = 11.sp,
-                color = SleekTextMedium,
-                letterSpacing = 0.5.sp
-            )
-        }
-
-        // Simulation toggle badge
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .clip(RoundedCornerShape(12.dp))
-                .background(if (isSimulation) Color(0xFFEADDFF) else Color(0xFFE8DEF8))
-                .border(1.dp, if (isSimulation) Color(0xFFD0BCFF) else SlateBorder, RoundedCornerShape(12.dp))
-                .clickable { onToggleSimulation() }
-                .padding(horizontal = 10.dp, vertical = 5.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(6.dp)
-                    .background(if (isSimulation) Color(0xFFB3261E) else Purple80, CircleShape)
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = if (isSimulation) "DEMO" else "REAL SCAN",
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (isSimulation) Color(0xFF21005D) else Color(0xFF1D192B)
-            )
         }
     }
 }
@@ -395,7 +585,7 @@ fun RadarBanner(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(130.dp)
+            .height(100.dp)
             .background(SlateDarkCard)
             .border(width = 1.dp, color = SlateBorder)
             .clickable { onTriggerScan() }
@@ -410,25 +600,25 @@ fun RadarBanner(
         Column(
             modifier = Modifier
                 .align(Alignment.CenterStart)
-                .padding(16.dp)
+                .padding(12.dp)
         ) {
             Text(
                 text = if (isScanning) "SCANNING AIRWAVES..." else "RADAR STANDBY",
-                fontSize = 12.sp,
+                fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
                 color = if (isScanning) SignalExcellent else SleekTextMedium
             )
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(2.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 WifiIcon(
                     color = SignalExcellent,
-                    modifier = Modifier.size(12.dp)
+                    modifier = Modifier.size(11.dp)
                 )
-                Spacer(modifier = Modifier.width(6.dp))
+                Spacer(modifier = Modifier.width(4.dp))
                 Text(
                     text = "$totalWifi networks detected",
-                    fontSize = 13.sp,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.Medium,
                     color = SleekTextDark
                 )
@@ -436,12 +626,12 @@ fun RadarBanner(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 BluetoothIcon(
                     color = Purple80,
-                    modifier = Modifier.size(12.dp)
+                    modifier = Modifier.size(11.dp)
                 )
-                Spacer(modifier = Modifier.width(6.dp))
+                Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = "$totalBt bluetooth beacons active",
-                    fontSize = 13.sp,
+                    text = "$totalBt beacons active",
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.Medium,
                     color = SleekTextDark
                 )
@@ -451,12 +641,12 @@ fun RadarBanner(
         // Tap instructions right corner
         Text(
             text = "TAP RADAR TO FORCE SCAN",
-            fontSize = 9.sp,
+            fontSize = 8.sp,
             fontFamily = FontFamily.Monospace,
             color = SleekTextMedium.copy(alpha = 0.6f),
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(8.dp)
+                .padding(6.dp)
         )
     }
 }
@@ -489,20 +679,20 @@ fun RadarSweep(isScanning: Boolean, modifier: Modifier = Modifier) {
         val center = Offset(size.width * 0.8f, size.height * 0.5f) // Right-biased center for layout balance
         val maxRadius = min(size.width * 0.4f, size.height * 0.9f)
 
-        // Grid circles
-        drawCircle(color = Color(0x1F6750A4), radius = maxRadius * 0.33f, center = center, style = Stroke(width = 1.dp.toPx()))
-        drawCircle(color = Color(0x1F6750A4), radius = maxRadius * 0.66f, center = center, style = Stroke(width = 1.dp.toPx()))
-        drawCircle(color = Color(0x1F6750A4), radius = maxRadius, center = center, style = Stroke(width = 1.5.dp.toPx()))
+        // Grid circles with neon cyan glow
+        drawCircle(color = Color(0x1A00F0FF), radius = maxRadius * 0.33f, center = center, style = Stroke(width = 1.dp.toPx()))
+        drawCircle(color = Color(0x1A00F0FF), radius = maxRadius * 0.66f, center = center, style = Stroke(width = 1.dp.toPx()))
+        drawCircle(color = Color(0x2E00F0FF), radius = maxRadius, center = center, style = Stroke(width = 1.5.dp.toPx()))
 
         // Axes crosshairs
         drawLine(
-            color = Color(0x1F6750A4),
+            color = Color(0x1500F0FF),
             start = Offset(center.x - maxRadius, center.y),
             end = Offset(center.x + maxRadius, center.y),
             strokeWidth = 1.dp.toPx()
         )
         drawLine(
-            color = Color(0x1F6750A4),
+            color = Color(0x1500F0FF),
             start = Offset(center.x, center.y - maxRadius),
             end = Offset(center.x, center.y + maxRadius),
             strokeWidth = 1.dp.toPx()
@@ -543,8 +733,6 @@ fun RadarSweep(isScanning: Boolean, modifier: Modifier = Modifier) {
 
 @Composable
 fun FiltersCard(
-    query: String,
-    onQueryChanged: (String) -> Unit,
     minRssi: Int,
     onMinRssiChanged: (Int) -> Unit,
     favoritesOnly: Boolean,
@@ -553,101 +741,70 @@ fun FiltersCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(12.dp),
+            .padding(horizontal = 12.dp, vertical = 4.dp),
         colors = CardDefaults.cardColors(containerColor = SlateDarkCard),
         border = BorderStroke(1.dp, SlateBorder)
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            // Search Bar
-            OutlinedTextField(
-                value = query,
-                onValueChange = onQueryChanged,
-                placeholder = { Text("Search by name, MAC, or alias...", color = SleekTextMedium, fontSize = 14.sp) },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = SleekTextMedium) },
-                trailingIcon = {
-                    if (query.isNotEmpty()) {
-                        IconButton(onClick = { onQueryChanged("") }) {
-                            Icon(Icons.Default.Clear, contentDescription = "Clear", tint = SleekTextMedium)
-                        }
-                    }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            // Favorite filter chip (very compact)
+            FilterChip(
+                selected = favoritesOnly,
+                onClick = onToggleFavorites,
+                label = { Text("Favorites Only", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = if (favoritesOnly) Icons.Default.Star else Icons.Outlined.Star,
+                        contentDescription = null,
+                        modifier = Modifier.size(12.dp),
+                        tint = if (favoritesOnly) Purple80 else SleekTextMedium
+                    )
                 },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = SleekSecondaryContainer,
+                    selectedLabelColor = SleekTextDark,
+                    selectedLeadingIconColor = Purple80,
+                    containerColor = Color.Transparent,
+                    labelColor = SleekTextMedium,
+                    disabledContainerColor = Color.Transparent
+                ),
+                border = BorderStroke(1.dp, if (favoritesOnly) Purple80 else SlateBorder),
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("search_field"),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = SleekTextDark,
-                    unfocusedTextColor = SleekTextDark,
-                    focusedBorderColor = Purple80,
-                    unfocusedBorderColor = SlateBorder
-                )
+                    .height(32.dp)
+                    .testTag("favorites_chip")
             )
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.width(16.dp))
 
-            // RSSI threshold slider and favorites chip
+            // RSSI threshold slider (sleeker)
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.weight(1f),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = "RSSI Cutoff Threshold",
-                            fontSize = 11.sp,
-                            color = SleekTextMedium,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            text = if (minRssi <= -95) "Show All" else "$minRssi dBm",
-                            fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            color = if (minRssi > -65) SignalExcellent else SignalWeak
-                        )
-                    }
-                    Slider(
-                        value = minRssi.toFloat(),
-                        onValueChange = { onMinRssiChanged(it.toInt()) },
-                        valueRange = -100f..-35f,
-                        colors = SliderDefaults.colors(
-                            thumbColor = Purple80,
-                            activeTrackColor = Purple80,
-                            inactiveTrackColor = SlateBorder
-                        ),
-                        modifier = Modifier.height(24.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(16.dp))
-
-                // Favorite filter chip
-                FilterChip(
-                    selected = favoritesOnly,
-                    onClick = onToggleFavorites,
-                    label = { Text("Favorites", fontSize = 11.sp) },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = if (favoritesOnly) Icons.Default.Star else Icons.Outlined.Star,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp),
-                            tint = if (favoritesOnly) Purple80 else SleekTextMedium
-                        )
-                    },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = SleekSecondaryContainer,
-                        selectedLabelColor = SleekTextDark,
-                        selectedLeadingIconColor = Purple80,
-                        containerColor = Color.Transparent,
-                        labelColor = SleekTextMedium,
-                        disabledContainerColor = Color.Transparent
+                Text(
+                    text = "RSSI: ${if (minRssi <= -95) "All" else "$minRssi dBm"}",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (minRssi > -65) SignalExcellent else SleekTextMedium,
+                    modifier = Modifier.width(78.dp)
+                )
+                Slider(
+                    value = minRssi.toFloat(),
+                    onValueChange = { onMinRssiChanged(it.toInt()) },
+                    valueRange = -100f..-35f,
+                    colors = SliderDefaults.colors(
+                        thumbColor = Purple80,
+                        activeTrackColor = Purple80,
+                        inactiveTrackColor = SlateBorder
                     ),
-                    border = BorderStroke(1.dp, if (favoritesOnly) Purple80 else SlateBorder),
-                    modifier = Modifier.testTag("favorites_chip")
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(20.dp)
                 )
             }
         }
@@ -781,9 +938,29 @@ fun DeviceCardItem(
         border = BorderStroke(1.dp, cardBorderColor)
     ) {
         Row(
-            modifier = Modifier.padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(IntrinsicSize.Min)
         ) {
+            // Left visual accent status indicator representing signal quality
+            Box(
+                modifier = Modifier
+                    .width(6.dp)
+                    .fillMaxHeight()
+                    .background(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(signalColor, signalColor.copy(alpha = 0.2f))
+                        )
+                    )
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
             // Signal Strength badge
             val badgeBgColor = if (isHighlighted) Purple80 else SleekSecondaryContainer
             val badgeTextColor = if (isHighlighted) Color.White else SleekHighlightText
@@ -863,7 +1040,7 @@ fun DeviceCardItem(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    val chipBg = if (isHighlighted) Color.White.copy(alpha = 0.5f) else Color(0xFFF1ECF4)
+                    val chipBg = if (isHighlighted) Color.White.copy(alpha = 0.15f) else SleekSecondaryContainer
                     val chipText = if (isHighlighted) SleekHighlightText else SleekTextMedium
 
                     Surface(
@@ -943,6 +1120,7 @@ fun DeviceCardItem(
             }
         }
     }
+}
 }
 
 @Composable
@@ -1231,7 +1409,7 @@ fun DeviceDetailDialog(
                         Button(
                             onClick = onStartTest,
                             modifier = Modifier.fillMaxWidth().testTag("start_test_button"),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF1ECF4)),
+                            colors = ButtonDefaults.buttonColors(containerColor = SlateDarkBackground),
                             border = BorderStroke(1.dp, Purple80.copy(alpha = 0.5f)),
                             shape = RoundedCornerShape(12.dp)
                         ) {
@@ -1243,7 +1421,7 @@ fun DeviceDetailDialog(
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(Color(0xFFF7F2FA))
+                                .background(SlateDarkBackground)
                                 .border(1.dp, SlateBorder, RoundedCornerShape(12.dp))
                                 .padding(12.dp)
                         ) {
@@ -1360,7 +1538,7 @@ fun RecentLogsPanel(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 2.dp, bottom = 12.dp, start = 12.dp, end = 12.dp),
+            .padding(top = 2.dp, bottom = 4.dp, start = 12.dp, end = 12.dp),
         colors = CardDefaults.cardColors(containerColor = SlateDarkCard),
         border = BorderStroke(1.dp, SlateBorder)
     ) {
@@ -1369,7 +1547,7 @@ fun RecentLogsPanel(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { expanded = !expanded }
-                    .padding(12.dp),
+                    .padding(8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -1378,12 +1556,12 @@ fun RecentLogsPanel(
                         imageVector = Icons.Default.List,
                         contentDescription = null,
                         tint = Purple80,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(16.dp)
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = "Signal Log Database (${logs.size} entries)",
-                        fontSize = 13.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = SleekTextDark
                     )
@@ -1392,14 +1570,14 @@ fun RecentLogsPanel(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = if (expanded) "Collapse" else "Expand",
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         color = SleekTextMedium
                     )
                     Icon(
                         imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                         contentDescription = null,
                         tint = SleekTextMedium,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(14.dp)
                     )
                 }
             }
@@ -1408,7 +1586,7 @@ fun RecentLogsPanel(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 200.dp)
+                        .heightIn(max = 120.dp)
                 ) {
                     Divider(color = SlateBorder)
 
@@ -1585,4 +1763,1269 @@ fun BluetoothIcon(color: Color, modifier: Modifier = Modifier) {
         )
     }
 }
+
+@Composable
+fun WifiPortalScreen(
+    viewModel: SignalViewModel,
+    wifiList: List<NetworkDevice>
+) {
+    val connectedSsid by viewModel.connectedWifiSsid.collectAsStateWithLifecycle()
+    val isConnecting by viewModel.isConnectingToWifi.collectAsStateWithLifecycle()
+    val connectionProgress by viewModel.wifiConnectionProgress.collectAsStateWithLifecycle()
+    val connectionStatus by viewModel.wifiConnectionStatus.collectAsStateWithLifecycle()
+
+    var passwordDevice by remember { mutableStateOf<NetworkDevice?>(null) }
+    var passwordText by remember { mutableStateOf("") }
+
+    if (passwordDevice != null) {
+        AlertDialog(
+            onDismissRequest = { passwordDevice = null; passwordText = "" },
+            title = { Text("Connect to Secured Wi-Fi") },
+            text = {
+                Column {
+                    Text("SSID: ${passwordDevice!!.ssidOrName}", fontWeight = FontWeight.Bold, color = SleekTextDark)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = passwordText,
+                        onValueChange = { passwordText = it },
+                        label = { Text("Enter WPA/WPA2 Password") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = SleekTextDark,
+                            unfocusedTextColor = SleekTextDark,
+                            focusedBorderColor = Purple80,
+                            unfocusedBorderColor = SlateBorder
+                        )
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.connectToWifi(passwordDevice!!.ssidOrName, passwordText)
+                        passwordDevice = null
+                        passwordText = ""
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Purple80)
+                ) {
+                    Text("Connect", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { passwordDevice = null; passwordText = "" }) {
+                    Text("Cancel", color = SleekTextMedium)
+                }
+            },
+            containerColor = SlateDarkCard
+        )
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item {
+            // Screen Header Card
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SlateDarkCard),
+                border = BorderStroke(1.dp, SlateBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Wireless Wi-Fi Connections",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = SleekTextDark
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Connect directly to open or secured Wi-Fi networks in your vicinity. Secure links prompt for WPA/WPA2 authentication while open networks auto-provision local DHCP routing details.",
+                        fontSize = 12.sp,
+                        color = SleekTextMedium,
+                        lineHeight = 18.sp
+                    )
+                }
+            }
+        }
+
+        if (isConnecting) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SleekHighlightCard),
+                    border = BorderStroke(1.dp, SleekHighlightBorder),
+                    modifier = Modifier.fillMaxWidth().testTag("wifi_connection_progress_card")
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                "Configuring Wi-Fi Link...",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = SleekHighlightText
+                            )
+                            Text(
+                                "${(connectionProgress * 100).toInt()}%",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = SleekHighlightText
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                        LinearProgressIndicator(
+                            progress = { connectionProgress },
+                            color = SleekHighlightBorder,
+                            trackColor = SlateBorder,
+                            modifier = Modifier.fillMaxWidth().clip(CircleShape)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            connectionStatus,
+                            fontSize = 12.sp,
+                            color = SleekTextMedium
+                        )
+                    }
+                }
+            }
+        } else if (connectedSsid != null) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0x1A00FF9D)),
+                    border = BorderStroke(1.dp, Color(0xFF00FF9D)),
+                    modifier = Modifier.fillMaxWidth().testTag("wifi_connected_card")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(10.dp)
+                                        .background(Color(0xFF00FF9D), CircleShape)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    "ACTIVE CONNECTION",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF00FF9D),
+                                    letterSpacing = 0.5.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                connectedSsid!!,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Black,
+                                color = SleekTextDark
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "Status: Connected • Gateway Latency: 12ms",
+                                fontSize = 11.sp,
+                                color = SleekTextMedium
+                            )
+                        }
+                        Button(
+                            onClick = { viewModel.disconnectWifi() },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF3366)),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Disconnect", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            Text(
+                "Detected Wi-Fi Networks (${wifiList.size})",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = SleekTextMedium,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
+
+        if (wifiList.isEmpty()) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SlateDarkCard),
+                    border = BorderStroke(1.dp, SlateBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        WifiIcon(
+                            color = SleekTextMedium,
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            "No Wi-Fi networks detected. Make sure scan or simulation is active.",
+                            fontSize = 13.sp,
+                            color = SleekTextMedium,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+        } else {
+            items(wifiList) { device ->
+                val isThisConnected = connectedSsid == device.ssidOrName
+                val isButtonEnabled = !isConnecting && connectedSsid == null
+                val isOpen = device.securityOrType.contains("Open", ignoreCase = true)
+
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SlateDarkCard),
+                    border = BorderStroke(1.dp, if (isThisConnected) Color(0xFF00FF9D) else SlateBorder),
+                    modifier = Modifier.fillMaxWidth().clickable { viewModel.selectDevice(device) }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Signal indicator strip on the left
+                        Box(
+                            modifier = Modifier
+                                .width(6.dp)
+                                .height(48.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(
+                                    when {
+                                        device.rssidbm >= -55 -> SignalExcellent
+                                        device.rssidbm >= -68 -> SignalGood
+                                        device.rssidbm >= -82 -> SignalFair
+                                        else -> SignalWeak
+                                    }
+                                )
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                device.ssidOrName,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = SleekTextDark,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                device.macAddress,
+                                fontSize = 11.sp,
+                                color = SleekTextMedium,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = if (isOpen) "Open AP" else "Secure (${device.securityOrType})",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isOpen) Color(0xFF00F0FF) else Color(0xFFFFD600)
+                                )
+                                Text(
+                                    " • ${device.frequencyOrClass} • Ch ${device.channelOrRssiTrend}",
+                                    fontSize = 10.sp,
+                                    color = SleekTextMedium
+                                )
+                            }
+                        }
+
+                        if (isThisConnected) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = "Connected",
+                                tint = Color(0xFF00FF9D),
+                                modifier = Modifier.size(24.dp)
+                            )
+                        } else {
+                            Button(
+                                onClick = {
+                                    if (isOpen) {
+                                        viewModel.connectToWifi(device.ssidOrName)
+                                    } else {
+                                        passwordDevice = device
+                                    }
+                                },
+                                enabled = isButtonEnabled,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isOpen) Color(0xFF00F0FF) else Purple80,
+                                    contentColor = if (isOpen) Color.Black else Color.White,
+                                    disabledContainerColor = SlateBorder,
+                                    disabledContentColor = SleekTextMedium
+                                ),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.testTag("connect_wifi_${device.macAddress}")
+                            ) {
+                                Text(
+                                    if (isOpen) "Connect" else "Auth Connect",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun BluetoothInternetScreen(
+    viewModel: SignalViewModel,
+    btList: List<NetworkDevice>
+) {
+    val connectedDevice by viewModel.connectedBtInternetDevice.collectAsStateWithLifecycle()
+    val isConnecting by viewModel.isConnectingToBtInternet.collectAsStateWithLifecycle()
+    val connectionProgress by viewModel.btInternetConnectionProgress.collectAsStateWithLifecycle()
+    val connectionStatus by viewModel.btInternetConnectionStatus.collectAsStateWithLifecycle()
+
+    val tetheringHosts = btList
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SlateDarkCard),
+                border = BorderStroke(1.dp, SlateBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Bluetooth Internet Sharing (PAN)",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = SleekTextDark
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Access internet connectivity via Bluetooth Personal Area Network (PAN) profiles. Bridge connections dynamically to nearby cellular tethering hosts, tablets, or computing gear.",
+                        fontSize = 12.sp,
+                        color = SleekTextMedium,
+                        lineHeight = 18.sp
+                    )
+                }
+            }
+        }
+
+        if (isConnecting) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SleekHighlightCard),
+                    border = BorderStroke(1.dp, SleekHighlightBorder),
+                    modifier = Modifier.fillMaxWidth().testTag("bt_connection_progress_card")
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                "Bridging BT PAN interface...",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = SleekHighlightText
+                            )
+                            Text(
+                                "${(connectionProgress * 100).toInt()}%",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = SleekHighlightText
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                        LinearProgressIndicator(
+                            progress = { connectionProgress },
+                            color = SleekHighlightBorder,
+                            trackColor = SlateBorder,
+                            modifier = Modifier.fillMaxWidth().clip(CircleShape)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            connectionStatus,
+                            fontSize = 12.sp,
+                            color = SleekTextMedium
+                        )
+                    }
+                }
+            }
+        } else if (connectedDevice != null) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0x1A00FF9D)),
+                    border = BorderStroke(1.dp, Color(0xFF00FF9D)),
+                    modifier = Modifier.fillMaxWidth().testTag("bt_connected_card")
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(10.dp)
+                                            .background(Color(0xFF00FF9D), CircleShape)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        "BLUETOOTH TETHERING ACTIVE",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF00FF9D),
+                                        letterSpacing = 0.5.sp
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    connectedDevice!!,
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = SleekTextDark
+                                )
+                            }
+                            Button(
+                                onClick = { viewModel.disconnectBtInternet() },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF3366)),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text("Disconnect", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+                        HorizontalDivider(color = SlateBorder)
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Traffic speed dials and ping latencies
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(horizontalAlignment = Alignment.Start) {
+                                Text("Downlink Speed", fontSize = 10.sp, color = SleekTextMedium)
+                                Text("2.4 Mbps", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00FF9D))
+                            }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("Uplink Speed", fontSize = 10.sp, color = SleekTextMedium)
+                                Text("0.8 Mbps", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00F0FF))
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("Ping Jitter", fontSize = 10.sp, color = SleekTextMedium)
+                                Text("42 ms", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFFD600))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            Text(
+                "Nearby Tethering-Compatible Hosts (${tetheringHosts.size})",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = SleekTextMedium,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
+
+        if (tetheringHosts.isEmpty()) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SlateDarkCard),
+                    border = BorderStroke(1.dp, SlateBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = "No BT Devices",
+                            tint = SleekTextMedium,
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            "No Bluetooth nodes discovered.",
+                            fontSize = 13.sp,
+                            color = SleekTextMedium,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+        } else {
+            items(tetheringHosts) { device ->
+                val isThisConnected = connectedDevice == device.ssidOrName
+                val isButtonEnabled = !isConnecting && connectedDevice == null
+
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SlateDarkCard),
+                    border = BorderStroke(1.dp, if (isThisConnected) Color(0xFF00FF9D) else SlateBorder),
+                    modifier = Modifier.fillMaxWidth().clickable { viewModel.selectDevice(device) }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(SleekSecondaryContainer, CircleShape)
+                        ) {
+                            BluetoothIcon(color = Purple80, modifier = Modifier.size(20.dp))
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                device.ssidOrName,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = SleekTextDark,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                device.macAddress,
+                                fontSize = 11.sp,
+                                color = SleekTextMedium,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    device.frequencyOrClass,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = SleekTextMedium
+                                )
+                                Text(
+                                    " • PAN/Tethering",
+                                    fontSize = 10.sp,
+                                    color = Color(0xFFFFD600)
+                                )
+                            }
+                        }
+
+                        if (isThisConnected) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = "Active Bridging",
+                                tint = Color(0xFF00FF9D),
+                                modifier = Modifier.size(24.dp)
+                            )
+                        } else {
+                            Button(
+                                onClick = { viewModel.connectToBtInternet(device.macAddress, device.ssidOrName) },
+                                enabled = isButtonEnabled,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFFFFD600),
+                                    contentColor = Color.Black,
+                                    disabledContainerColor = SlateBorder,
+                                    disabledContentColor = SleekTextMedium
+                                ),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.testTag("bridge_bt_${device.macAddress}")
+                            ) {
+                                Text(
+                                    "Bridge",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SettingsScreen(
+    viewModel: SignalViewModel
+) {
+    val currentTheme by viewModel.appThemeSetting.collectAsStateWithLifecycle()
+    val isSimulation by viewModel.isSimulationMode.collectAsStateWithLifecycle()
+    val minRssi by viewModel.minRssiThreshold.collectAsStateWithLifecycle()
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SlateDarkCard),
+                border = BorderStroke(1.dp, SlateBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "System Preferences & Calibration",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = SleekTextDark
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Fine-tune system telemetry parameters, configure adaptive appearance presets, and control electromagnetic hardware simulations.",
+                        fontSize = 12.sp,
+                        color = SleekTextMedium,
+                        lineHeight = 18.sp
+                    )
+                }
+            }
+        }
+
+        // 1. Theme Configuration Panel
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SlateDarkCard),
+                border = BorderStroke(1.dp, SlateBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "ADAPTIVE THEME CONTROL",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF00FF9D),
+                        letterSpacing = 0.5.sp
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Select your preferred visual style. Supports cyber slate dark mode and clear high-contrast light mode.",
+                        fontSize = 12.sp,
+                        color = SleekTextMedium,
+                        lineHeight = 16.sp
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        val themes = listOf(
+                            "light" to "Neo Steel",
+                            "dark" to "Cyber Obsidian",
+                            "system" to "System Default"
+                        )
+                        themes.forEach { (key, label) ->
+                            val isSelected = currentTheme == key
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(44.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(if (isSelected) Purple80 else SleekSecondaryContainer)
+                                    .border(
+                                        width = 1.dp,
+                                        color = if (isSelected) Color(0xFF00F0FF) else SlateBorder,
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                    .clickable { viewModel.setAppTheme(key) }
+                                    .testTag("theme_btn_$key")
+                            ) {
+                                Text(
+                                    text = label,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isSelected) Color.White else SleekTextMedium
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Hardware Simulation Panel
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SlateDarkCard),
+                border = BorderStroke(1.dp, SlateBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "HARDWARE TELEMETRY MODEL",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF00F0FF),
+                                letterSpacing = 0.5.sp
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Simulation Mode",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = SleekTextDark
+                            )
+                        }
+                        Switch(
+                            checked = isSimulation,
+                            onCheckedChange = { viewModel.toggleSimulationMode() },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color(0xFF00F0FF),
+                                checkedTrackColor = Purple80
+                            ),
+                            modifier = Modifier.testTag("simulation_switch")
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "When active, virtual electromagnetic signals populate telemetry boards to mimic live frequency waves. Recommended for virtual emulator spaces.",
+                        fontSize = 12.sp,
+                        color = SleekTextMedium,
+                        lineHeight = 16.sp
+                    )
+                }
+            }
+        }
+
+        // 3. RSSI Threshold Configuration Slider
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SlateDarkCard),
+                border = BorderStroke(1.dp, SlateBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "SIGNAL SENSITIVITY CALIBRATION",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFFFD600),
+                        letterSpacing = 0.5.sp
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Exclude signals weaker than:",
+                            fontSize = 13.sp,
+                            color = SleekTextDark
+                        )
+                        Text(
+                            text = "$minRssi dBm",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = when {
+                                minRssi >= -55 -> SignalExcellent
+                                minRssi >= -68 -> SignalGood
+                                minRssi >= -82 -> SignalFair
+                                else -> SignalWeak
+                            }
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Slider(
+                        value = minRssi.toFloat(),
+                        onValueChange = { viewModel.updateMinRssi(it.toInt()) },
+                        valueRange = -100f..-40f,
+                        colors = SliderDefaults.colors(
+                            thumbColor = Purple80,
+                            activeTrackColor = Color(0xFFFFD600)
+                        ),
+                        modifier = Modifier.fillMaxWidth().testTag("rssi_slider")
+                    )
+                }
+            }
+        }
+
+        // 4. Database Reset / System Diagnostics Information
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SlateDarkCard),
+                border = BorderStroke(1.dp, SlateBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "SYSTEM MAINTENANCE",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFFF3366),
+                        letterSpacing = 0.5.sp
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
+                        onClick = { viewModel.clearHistoryLogs() },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF3366)),
+                        modifier = Modifier.fillMaxWidth().testTag("clear_logs_btn")
+                    ) {
+                        Text("Clear Historic Signal Logs Database", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(modifier = Modifier.height(14.dp))
+                    HorizontalDivider(color = SlateBorder)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "AirPulse Wireless Scanner Engine v2.4",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = SleekTextDark
+                    )
+                    Text(
+                        text = "FCC ID: M3-AP24 • Software Build: 2026.06.25 • All Rights Reserved",
+                        fontSize = 10.sp,
+                        color = SleekTextMedium
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SurroundWifiScreen(
+    viewModel: SignalViewModel,
+    wifiList: List<NetworkDevice>
+) {
+    val connectedSsid by viewModel.connectedWifiSsid.collectAsStateWithLifecycle()
+    val isConnecting by viewModel.isConnectingToWifi.collectAsStateWithLifecycle()
+    val connectionProgress by viewModel.wifiConnectionProgress.collectAsStateWithLifecycle()
+    val connectionStatus by viewModel.wifiConnectionStatus.collectAsStateWithLifecycle()
+
+    var showPasswordDialogForDevice by remember { mutableStateOf<NetworkDevice?>(null) }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item {
+            // Screen Header Card
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SlateDarkCard),
+                border = BorderStroke(1.dp, SlateBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Surrounding Wi-Fi Networks",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = SleekTextDark
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Real-time spectrum scan of all accessible wireless access points. Connect to open networks with a single click, or securely authenticate to encrypted endpoints.",
+                        fontSize = 12.sp,
+                        color = SleekTextMedium,
+                        lineHeight = 18.sp
+                    )
+                }
+            }
+        }
+
+        if (isConnecting) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SleekHighlightCard),
+                    border = BorderStroke(1.dp, SleekHighlightBorder),
+                    modifier = Modifier.fillMaxWidth().testTag("surround_wifi_connecting_card")
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                "Establishing Wireless Link...",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = SleekHighlightText
+                            )
+                            Text(
+                                "${(connectionProgress * 100).toInt()}%",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = SleekHighlightText
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                        LinearProgressIndicator(
+                            progress = { connectionProgress },
+                            color = SleekHighlightBorder,
+                            trackColor = SlateBorder,
+                            modifier = Modifier.fillMaxWidth().clip(CircleShape)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            connectionStatus,
+                            fontSize = 12.sp,
+                            color = SleekTextMedium
+                        )
+                    }
+                }
+            }
+        } else if (connectedSsid != null) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0x1A00FF9D)),
+                    border = BorderStroke(1.dp, Color(0xFF00FF9D)),
+                    modifier = Modifier.fillMaxWidth().testTag("surround_wifi_connected_card")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(10.dp)
+                                        .background(Color(0xFF00FF9D), CircleShape)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    "CONNECTED WIRELESS GATEWAY",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF00FF9D),
+                                    letterSpacing = 0.5.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                connectedSsid!!,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Black,
+                                color = SleekTextDark
+                            )
+                        }
+                        Button(
+                            onClick = { viewModel.disconnectWifi() },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF3366)),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Disconnect", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            Text(
+                "All Detected SSIDs (${wifiList.size})",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = SleekTextMedium,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
+
+        if (wifiList.isEmpty()) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SlateDarkCard),
+                    border = BorderStroke(1.dp, SlateBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        WifiIcon(
+                            color = SleekTextMedium,
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            "No surrounding Wi-Fi networks discovered in current spectrum scan.",
+                            fontSize = 13.sp,
+                            color = SleekTextMedium,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+        } else {
+            items(wifiList) { device ->
+                val isThisConnected = connectedSsid == device.ssidOrName
+                val isOpen = device.securityOrType.contains("Open", ignoreCase = true) || 
+                             device.ssidOrName.contains("Free", ignoreCase = true) ||
+                             device.ssidOrName.contains("Open", ignoreCase = true) ||
+                             device.ssidOrName.contains("Guest", ignoreCase = true)
+                val isButtonEnabled = !isConnecting && connectedSsid == null
+
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SlateDarkCard),
+                    border = BorderStroke(1.dp, if (isThisConnected) Color(0xFF00FF9D) else SlateBorder),
+                    modifier = Modifier.fillMaxWidth().clickable { viewModel.selectDevice(device) }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(6.dp)
+                                .height(48.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(
+                                    when {
+                                        device.rssidbm >= -55 -> SignalExcellent
+                                        device.rssidbm >= -68 -> SignalGood
+                                        device.rssidbm >= -82 -> SignalFair
+                                        else -> SignalWeak
+                                    }
+                                )
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                device.ssidOrName,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = SleekTextDark,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                device.macAddress,
+                                fontSize = 11.sp,
+                                color = SleekTextMedium,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    if (isOpen) "Open/Free AP" else "Encrypted (WPA2/WPA3)",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isOpen) Color(0xFF00FF9D) else Color(0xFFFFD600)
+                                )
+                                Text(
+                                    " • ${device.frequencyOrClass} • Ch ${device.channelOrRssiTrend}",
+                                    fontSize = 10.sp,
+                                    color = SleekTextMedium
+                                )
+                            }
+                        }
+
+                        if (isThisConnected) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = "Connected",
+                                tint = Color(0xFF00FF9D),
+                                modifier = Modifier.size(24.dp)
+                            )
+                        } else {
+                            Button(
+                                onClick = {
+                                    if (isOpen) {
+                                        viewModel.connectToWifi(device.ssidOrName)
+                                    } else {
+                                        showPasswordDialogForDevice = device
+                                    }
+                                },
+                                enabled = isButtonEnabled,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isOpen) Color(0xFF00FF9D) else Color(0xFFFFD600),
+                                    contentColor = Color.Black,
+                                    disabledContainerColor = SlateBorder,
+                                    disabledContentColor = SleekTextMedium
+                                ),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.testTag("surround_connect_${device.macAddress}")
+                            ) {
+                                Text(
+                                    if (isOpen) "Connect" else "Secured",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showPasswordDialogForDevice != null) {
+        WifiPasswordInputDialog(
+            ssid = showPasswordDialogForDevice!!.ssidOrName,
+            onDismiss = { showPasswordDialogForDevice = null },
+            onConnect = { password ->
+                val deviceName = showPasswordDialogForDevice!!.ssidOrName
+                showPasswordDialogForDevice = null
+                viewModel.connectToWifi(deviceName, password)
+            }
+        )
+    }
+}
+
+@Composable
+fun WifiPasswordInputDialog(
+    ssid: String,
+    onDismiss: () -> Unit,
+    onConnect: (String) -> Unit
+) {
+    var password by remember { mutableStateOf("") }
+    var isPasswordVisible by remember { mutableStateOf(false) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .wrapContentHeight()
+                .padding(vertical = 16.dp),
+            shape = RoundedCornerShape(24.dp),
+            color = SlateDarkCard,
+            border = BorderStroke(1.dp, SlateBorder)
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(20.dp)
+                    .wrapContentHeight()
+            ) {
+                Text(
+                    text = "SECURED NETWORK DETECTED",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFFFD600),
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 0.5.sp
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Connect to $ssid",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Black,
+                    color = SleekTextDark
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "This Wi-Fi network is encrypted. Please enter the WPA2/WPA3 Pre-Shared Key below to establish a secure link.",
+                    fontSize = 12.sp,
+                    color = SleekTextMedium,
+                    lineHeight = 18.sp
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("Wi-Fi Password") },
+                    singleLine = true,
+                    visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                    trailingIcon = {
+                        TextButton(
+                            onClick = { isPasswordVisible = !isPasswordVisible },
+                            colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFFF007F))
+                        ) {
+                            Text(
+                                text = if (isPasswordVisible) "HIDE" else "SHOW",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = SleekTextDark,
+                        unfocusedTextColor = SleekTextDark,
+                        focusedBorderColor = Color(0xFFFF007F),
+                        unfocusedBorderColor = SlateBorder,
+                        focusedLabelColor = Color(0xFFFF007F),
+                        unfocusedLabelColor = SleekTextMedium
+                    ),
+                    modifier = Modifier.fillMaxWidth().testTag("wifi_password_input")
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        border = BorderStroke(1.dp, SlateBorder),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = SleekTextMedium),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Cancel", fontWeight = FontWeight.Bold)
+                    }
+
+                    Button(
+                        onClick = {
+                            if (password.isNotEmpty()) {
+                                onConnect(password)
+                            }
+                        },
+                        enabled = password.isNotEmpty(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFFF007F),
+                            contentColor = Color.White,
+                            disabledContainerColor = SlateBorder,
+                            disabledContentColor = SleekTextMedium
+                        ),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.weight(1.5f).testTag("wifi_password_submit_btn")
+                    ) {
+                        Text("Connect", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+}
+
 

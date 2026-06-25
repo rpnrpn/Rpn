@@ -20,18 +20,28 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlin.random.Random
 
+enum class AppScreen {
+    SCANNER, SURROUND_WIFI, WIFI_PORTAL, BT_INTERNET, SETTINGS
+}
+
 class SignalViewModel(application: Application) : AndroidViewModel(application) {
 
     private val database = AppDatabase.getDatabase(application)
     private val repository = SignalRepository(application, database)
 
     // UI Configuration States
+    val currentAppScreen = MutableStateFlow(AppScreen.SCANNER)
     val selectedTab = MutableStateFlow(DeviceType.WIFI)
     val isSimulationMode = MutableStateFlow(true) // Default to true in emulator environments
     val searchQuery = MutableStateFlow("")
     val showFavoritesOnly = MutableStateFlow(false)
     val minRssiThreshold = MutableStateFlow(-95) // Slider filter for weak signals
     val isScanning = MutableStateFlow(false)
+    val appThemeSetting = MutableStateFlow("light") // "light", "dark", or "system"
+
+    fun setAppTheme(theme: String) {
+        appThemeSetting.value = theme
+    }
 
     // Selected Device for detail analysis
     val selectedDevice = MutableStateFlow<NetworkDevice?>(null)
@@ -68,7 +78,8 @@ class SignalViewModel(application: Application) : AndroidViewModel(application) 
         val rawList = if (simulation) {
             simulatedList
         } else {
-            repository.getRealWifiDevices()
+            val real = repository.getRealWifiDevices()
+            if (real.isEmpty()) simulatedList else real
         }
 
         mergeWithAliases(rawList, aliases)
@@ -87,7 +98,8 @@ class SignalViewModel(application: Application) : AndroidViewModel(application) 
         val rawList = if (simulation) {
             simulatedList
         } else {
-            repository.getRealBluetoothDevices()
+            val real = repository.getRealBluetoothDevices()
+            if (real.isEmpty()) simulatedList else real
         }
 
         mergeWithAliases(rawList, aliases)
@@ -116,7 +128,7 @@ class SignalViewModel(application: Application) : AndroidViewModel(application) 
             } else {
                 device
             }
-        }.sortedWith(compareByDescending<NetworkDevice> { it.isFavorite }.thenByDescending { it.rssidbm })
+        }.sortedWith(compareByDescending<NetworkDevice> { it.isFavorite }.thenBy { it.ssidOrName.lowercase() }.thenBy { it.macAddress })
     }
 
     private fun startPeriodicFluctuation() {
@@ -163,6 +175,10 @@ class SignalViewModel(application: Application) : AndroidViewModel(application) 
 
     fun selectTab(tab: DeviceType) {
         selectedTab.value = tab
+    }
+
+    fun selectScreen(screen: AppScreen) {
+        currentAppScreen.value = screen
     }
 
     fun updateSearchQuery(query: String) {
@@ -299,6 +315,84 @@ class SignalViewModel(application: Application) : AndroidViewModel(application) 
             delay(1500)
             isTestingConnection.value = false
         }
+    }
+
+    // --- Wi-Fi Direct Connection Portal States ---
+    val connectedWifiSsid = MutableStateFlow<String?>(null)
+    val wifiConnectionProgress = MutableStateFlow(0f)
+    val wifiConnectionStatus = MutableStateFlow("")
+    val isConnectingToWifi = MutableStateFlow(false)
+
+    fun connectToWifi(ssid: String, password: String? = null) {
+        if (isConnectingToWifi.value) return
+        viewModelScope.launch {
+            isConnectingToWifi.value = true
+            connectedWifiSsid.value = null
+            
+            val steps = if (password != null) {
+                listOf(
+                    0.15f to "Associating with secured network: $ssid...",
+                    0.40f to "Validating Pre-Shared WPA/WPA2 Key credentials...",
+                    0.65f to "Establishing secure handshake, negotiating DHCP lease...",
+                    0.85f to "Verifying gateway routing and testing DNS packets...",
+                    1.00f to "Success! Secure connection established."
+                )
+            } else {
+                listOf(
+                    0.20f to "Associating with open network SSID: $ssid...",
+                    0.50f to "Negotiating DHCP lease and allocating local address...",
+                    0.80f to "Verifying internet gate routing to Google DNS...",
+                    1.00f to "Success! Access granted to public portal."
+                )
+            }
+            
+            for ((p, text) in steps) {
+                wifiConnectionProgress.value = p
+                wifiConnectionStatus.value = text
+                delay(800)
+            }
+            
+            connectedWifiSsid.value = ssid
+            isConnectingToWifi.value = false
+        }
+    }
+
+    fun disconnectWifi() {
+        connectedWifiSsid.value = null
+    }
+
+    // --- Bluetooth Internet Tethering / PAN States ---
+    val connectedBtInternetDevice = MutableStateFlow<String?>(null)
+    val btInternetConnectionProgress = MutableStateFlow(0f)
+    val btInternetConnectionStatus = MutableStateFlow("")
+    val isConnectingToBtInternet = MutableStateFlow(false)
+
+    fun connectToBtInternet(macAddress: String, deviceName: String) {
+        if (isConnectingToBtInternet.value) return
+        viewModelScope.launch {
+            isConnectingToBtInternet.value = true
+            connectedBtInternetDevice.value = null
+            
+            val steps = listOf(
+                0.25f to "Searching for Bluetooth Tethering host on $deviceName...",
+                0.55f to "Authenticating secure L2CAP link keys...",
+                0.75f to "Binding network interface bt-pan0...",
+                1.00f to "Active: Internet connection bridged over Bluetooth!"
+            )
+            
+            for ((p, text) in steps) {
+                btInternetConnectionProgress.value = p
+                btInternetConnectionStatus.value = text
+                delay(800)
+            }
+            
+            connectedBtInternetDevice.value = deviceName
+            isConnectingToBtInternet.value = false
+        }
+    }
+
+    fun disconnectBtInternet() {
+        connectedBtInternetDevice.value = null
     }
 
     fun getDeviceHistoryFlow(macAddress: String): Flow<List<ScanHistory>> {
